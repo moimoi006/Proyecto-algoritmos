@@ -6,6 +6,7 @@ class App:
         self.municipios=[]
         self.servicio_clima= ServicioClima()
         self.cargar_datos()
+    def buscar_municipio(self, nombre_municipio: str) -> Municipio:
         for mun in self.municipios:
             if mun.nombre.lower() == nombre_municipio.lower():
                 return mun
@@ -25,7 +26,7 @@ class App:
 
                 localidad_obj = Localidad(
                     nombre=item["localidad"],
-                    latitud=lat
+                    latitud=lat,
                     longitud=lng
                 )
                 municipio_obj.agregar_localidad(localidad_obj)
@@ -62,3 +63,7 @@ class App:
             print("\n\tNo se encontro la localidad '{nombre_loc}' en el sistema")
 
     def start(self):
+        while True:
+            print("\n" + "=" *40)
+            print("Sistema meteorologico de caracas")
+            
