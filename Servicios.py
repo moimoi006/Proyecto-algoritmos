@@ -81,7 +81,7 @@ class ServicioClima:
         parametros = {
             "latitude": localidad.latitud,
             "longitude": localidad.longitud,
-            "current": ["temperature_2m", "relative_humidity_2m", "wind_speed_10m", "weather_code"]
+            "current": ["temperature_2m, relative_humidity_2m, wind_speed_10m, weather_code"]
         }
         try:
             respuesta=requests.get(self.url_base, params=parametros)
