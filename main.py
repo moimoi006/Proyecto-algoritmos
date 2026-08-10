@@ -118,7 +118,6 @@ class App:
                     clima_obj = self.servicio_clima.obtener_clima(mun_sel.nombre, loc_sel)
                     if clima_obj:
                         clima_obj.show()
-                        # === NUEVO: Guarda la consulta en la sesión ===
                         self.consultas_sesion.append(clima_obj)
                 else:
                     print("\nSelección inválida.")
@@ -212,7 +211,7 @@ class App:
                 self.consultar_historico()
             elif opcion == "0":
                 print("\nGracias por utilizar el sistema! Hasta luego.")
-                break # CORRECCIÓN DE ERROR: detiene la ejecución del menú
+                break
             else:
                 print("\nOpción invalida. Intente de nuevo.")
 
