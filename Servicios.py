@@ -1,3 +1,5 @@
+import requests 
+
 class Localidad:
     def __init__(self, nombre: str, latitud: float = None, longitud: float = None):
         self.nombre=nombre
@@ -22,7 +24,7 @@ class Municipio:
     def __init__(self, nombre: str):
         self.nombre=nombre
         self.localidades = []
-    def agregar_localidades(self, localidad: Localidad):
+    def agregar_localidad(self, localidad):
         self.localidades.append(localidad)
     def total_localidades(self) -> int:
         return len(self.localidades)
@@ -82,13 +84,13 @@ class ServicioClima:
             "current": ["temperature_2m", "relative_humidity_2m", "wind_speed_10m", "weather_code"]
         }
         try:
-            respuesta=request.get(self.url_base, params=parametros)
+            respuesta=requests.get(self.url_base, params=parametros)
             if respuesta.status_code == 200:
                 datos=respuesta.json()
                 actual=datos["current"]
                 return ClimaActual(
                     localidad=localidad,
-                    temperatura=actual["temperatura_2m"],
+                    temperatura=actual["temperature_2m"],
                     humedad=actual["relative_humidity_2m"],
                     viento= actual["wind_speed_10m"],
                     codigo_clima=actual["weather_code"]

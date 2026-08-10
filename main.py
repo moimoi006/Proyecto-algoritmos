@@ -15,26 +15,26 @@ class App:
         try:
             with open("zonas_caracas.json", "r", encoding="utf-8") as archivo:
                 datos = json.load(archivo)
-            for item in datos:
-                nombre_mun = item["municipio"]
+            for nombre_mun, localidades in datos.items():
                 municipio_obj = self.buscar_municipio(nombre_mun)
                 if municipio_obj is None:
                     municipio_obj = Municipio(nombre=nombre_mun)
                     self.municipios.append(municipio_obj)
-                lat = item.get("latitud", None)
-                lng = item.get("longitud", None)
+                for item in localidades:
+                    lat = item.get("latitud", None)
+                    lng = item.get("longitud", None)
 
-                localidad_obj = Localidad(
-                    nombre=item["localidad"],
-                    latitud=lat,
-                    longitud=lng
+                    localidad_obj = Localidad(
+                        nombre=item["localidad"],
+                        latitud=lat,
+                        longitud=lng
                 )
-                municipio_obj.agregar_localidad(localidad_obj)
+                    municipio_obj.agregar_localidad(localidad_obj)
             print("Datos cargados con exito en la aplicacion!")
         except FileNotFoundError:
             print("Error: No se encontro el archivo 'zonas_caracas.json'.")
         except Exception as e:
-            print("Ocurrio un error al cargar los datos: {e}")
+            print(f"Ocurrio un error al cargar los datos: {e}")
     def monstrar_reporte_general(self):
         print("\n" + "=" * 50)
         print(" Reporte de Municipios y Localidades (Caracas)")
@@ -48,19 +48,21 @@ class App:
         localidad_encontrada= None
         for mun in self.municipios:
             for loc in mun.localidades:
-                if loc.nombre.lower() == nombre_loc.lower():
+                if loc.nombre.strip().lower() == nombre_loc.lower():
                     localidad_encontrada = loc
                     break
+            if localidad_encontrada:
+                break
         if localidad_encontrada:
             if not localidad_encontrada.tiene_coordenadas():
-                print("\n\tLa localidad '{localidad_encontrada.nombre}' existe pero no posee coordenadas.")
+                print(f"\n\tLa localidad '{localidad_encontrada.nombre}' existe pero no posee coordenadas.")
             else:
                 clima_obj= self.servicio_clima.obtener_clima(localidad_encontrada)
                 if clima_obj:
                     print()
                     clima_obj.show()
         else:
-            print("\n\tNo se encontro la localidad '{nombre_loc}' en el sistema")
+            print(f"\n\tNo se encontro la localidad '{nombre_loc}' en el sistema")
 
     def start(self):
         while True:
@@ -68,7 +70,7 @@ class App:
             print("Sistema meteorologico de caracas")
             print("=" * 40)
             print("1. Ver reporte general de Municipios y Localidades")
-            print("2. Consultar clima actualn de una localidad")
+            print("2. Consultar clima actual de una localidad")
             print("0. Salir del programa")
             print("=" * 40)
 
