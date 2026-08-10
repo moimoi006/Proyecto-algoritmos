@@ -82,6 +82,8 @@ class App:
                 self.consultar_clima_localidad()
             elif opcion == "0":
                 print("\nGracias por utilizar el sistema! Hasta luego.")
+                break
+                
             else:
                 print("\n Opcion invalida. Intente de nuevo.")
 
