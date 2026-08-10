@@ -66,4 +66,23 @@ class App:
         while True:
             print("\n" + "=" *40)
             print("Sistema meteorologico de caracas")
-            
+            print("=" * 40)
+            print("1. Ver reporte general de Municipios y Localidades")
+            print("2. Consultar clima actualn de una localidad")
+            print("0. Salir del programa")
+            print("=" * 40)
+
+            opcion = input("Seleccione una opcion: ").strip()
+
+            if opcion == "1":
+                self.monstrar_reporte_general()
+            elif opcion == "2":
+                self.consultar_clima_localidad()
+            elif opcion == "0":
+                print("\nGracias por utilizar el sistema! Hasta luego.")
+            else:
+                print("\n Opcion invalida. Intente de nuevo.")
+
+if __name__ == "__main__":
+    app = App()
+    app.start()
