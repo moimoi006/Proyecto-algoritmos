@@ -63,15 +63,6 @@ class Municipio:
         )
 
 class ClimaActual:
-    
-    CODIGOS_WMO = {
-        0: "Despejado", 1: "Mayormente despejado", 2: "Parcialmente nublado", 3: "Nublado",
-        45: "Niebla", 48: "Niebla con escarcha", 51: "Llovizna ligera", 53: "Llovizna moderada",
-        55: "Llovizna densa", 61: "Lluvia ligera", 63: "Lluvia moderada", 65: "Lluvia fuerte",
-        80: "Chubascos ligeros", 81: "Chubascos moderados", 82: "Chubascos violentos",
-        95: "Tormenta eléctrica", 96: "Tormenta eléctrica con granizo ligero", 99: "Tormenta eléctrica con granizo fuerte"
-        }
-
     def __init__(self, municipio_nombre: str, localidad: Localidad, temperatura: float, humedad: float, viento: float, codigo_clima: int):
         self.municipio_nombre = municipio_nombre
         self.localidad = localidad
@@ -81,8 +72,45 @@ class ClimaActual:
         self.codigo_clima = codigo_clima
 
     def obtener_descripcion_clima(self) -> str:
-        return self.CODIGOS_WMO.get(self.codigo_clima, f"Código {self.codigo_clima}")
-
+        code = self.codigo_clima
+        if code == 0:
+            return "Despejado"
+        elif code == 1:
+            return "Mayormente despejado"
+        elif code == 2:
+            return "Parcialmente nublado"
+        elif code == 3:
+            return "Nublado"
+        elif code == 45:
+            return "Niebla"
+        elif code == 48:
+            return "Niebla con escarcha"
+        elif code == 51:
+            return "Llovizna ligera"
+        elif code == 53:
+            return "Llovizna moderada"
+        elif code == 55:
+            return "Llovizna densa"
+        elif code == 61:
+            return "Lluvia ligera"
+        elif code == 63:
+            return "Lluvia moderada"
+        elif code == 65:
+            return "Lluvia fuerte"
+        elif code == 80:
+            return "Chubascos ligeros"
+        elif code == 81:
+            return "Chubascos moderados"
+        elif code == 82:
+            return "Chubascos violentos"
+        elif code == 95:
+            return "Tormenta eléctrica"
+        elif code == 96:
+            return "Tormenta eléctrica con granizo ligero"
+        elif code == 99:
+            return "Tormenta eléctrica con granizo fuerte"
+        else:
+            return f"Código {code}"
     def show(self):
         print("\n" + "="*50)
         print(" DETALLES METEOROLÓGICOS EN TIEMPO REAL")
@@ -199,12 +227,21 @@ class ResumenPeriodo:
     def agregar_registro(self, registro: RegistroDiario):
         self.registros.append(registro)
     def valores(self, magnitud: str) -> list:
-        return [getattr(r, magnitud) for r in self.registros if getattr(r, magnitud) is not None]
+        resultado = []
+        for r in self.registros:
+            val = getattr(r,magnitud)
+            if val is not None:
+                resultado.append(val)
+        return resultado
     def promedio(self, magnitud: str):
         valores = self.valores(magnitud)
         if not valores:
             return None
-        return sum(valores) / len(valores)
+    
+        suma = 0.0
+        for v in valores:
+            suma += v
+        return suma / len(valores)
     def temperatura_promedio(self):
         return self.promedio("temperatura")
     def humedad_promedio(self):
@@ -215,7 +252,11 @@ class ResumenPeriodo:
         valores = self.valores("precipitacion")
         if not valores:
             return None
-        return sum(valores)
+    
+        suma = 0.0
+        for v in valores:
+            suma += v
+        return suma
     def show(self):
         print(
             f" - {self.clave} -> "
@@ -243,24 +284,36 @@ class HistorialLocalidad:
         precipitaciones = daily.get("precipitation_sum", [])
         vientos = daily.get("wind_speed_10m_max", [])
         for i in range(len(fechas)):
-            self.registros.append(
-                RegistroDiario(
-                    fecha=fechas[i],
-                    temperatura=self.valor_en(temperaturas, i),
-                    humedad=self.valor_en(humedades, i),
-                    precipitacion=self.valor_en(precipitaciones, i),
-                    viento=self.valor_en(vientos, i)
-                )
+            registro = RegistroDiario(
+                fecha=fechas[i],
+                temperatura=self.valor_en(temperaturas, i),
+                humedad=self.valor_en(humedades, i),
+                precipitacion=self.valor_en(precipitaciones, i),
+                viento=self.valor_en(vientos, i)
             )
+            self.registros.append(registro)
         return True
     def agrupar(self, por_anio: bool) -> list:
-        resumenes = {}
+        resumenes = [] 
         for registro in self.registros:
             clave = registro.clave_anio() if por_anio else registro.clave_mes()
-            if clave not in resumenes:
-                resumenes[clave] = ResumenPeriodo(clave)
-            resumenes[clave].agregar_registro(registro)
-        return [resumenes[clave] for clave in sorted(resumenes)]
+            resumen_encontrado = None
+            for r in resumenes:
+                if r.clave == clave:
+                    resumen_encontrado = r
+            if resumen_encontrado is None:
+                resumen_encontrado = ResumenPeriodo(clave)
+                resumenes.append(resumen_encontrado)
+            resumen_encontrado.agregar_registro(registro)
+        for i in range(len(resumenes)):
+            for j in range(0, len(resumenes) - i - 1):
+                if resumenes[j].clave > resumenes[j + 1].clave:
+                    resumenes[j], resumenes[j + 1] = resumenes[j + 1], resumenes[j]
+        return resumenes
+        resultado = []
+        for clave in sorted(resumenes):
+            resultado.append(resumenes[clave])
+        return resultado
     def resumenes_mensuales(self) -> list:
         return self.agrupar(False)
     def resumenes_anuales(self) -> list:
@@ -302,15 +355,26 @@ class AnalizadorHistorico:
 
     @staticmethod
     def mostrar_extremo(resumenes: list, magnitud: str, etiqueta: str, sufijo: str, buscar_maximo: bool):
-        validos = [r for r in resumenes if getattr(r, magnitud)() is not None]
+        validos = []
+        for r in resumenes:
+            if getattr(r, magnitud)() is not None:
+                validos.append(r)
         if not validos:
             print(f" - {etiqueta}: N/A")
             return
-        if buscar_maximo:
-            elegido = max(validos, key=lambda r: getattr(r, magnitud)())
-        else:
-            elegido = min(validos, key=lambda r: getattr(r, magnitud)())
-        print(f" - {etiqueta}: {elegido.clave} ({formatear_valor(getattr(elegido, magnitud)(), sufijo)})")
+        elegido = validos[0]
+        for r in validos:
+            val_actual = getattr(r, magnitud)()
+            val_elegido = getattr(elegido, magnitud)()
+    
+            if buscar_maximo:
+                if val_actual > val_elegido:
+                    elegido = r
+            else:
+                if val_actual < val_elegido:
+                    elegido = r
+        valor_extremo = getattr(elegido, magnitud)()
+        print(f" - {etiqueta}: {elegido.clave} ({formatear_valor(valor_extremo, sufijo)})")
 
     @staticmethod
     def valor_grafico(valor):
@@ -320,11 +384,18 @@ class AnalizadorHistorico:
 
     @staticmethod
     def generar_grafico(resumenes_anuales: list, nombre_localidad: str):
-        anios = [r.clave for r in resumenes_anuales]
-        temps = [AnalizadorHistorico.valor_grafico(r.temperatura_promedio()) for r in resumenes_anuales]
-        hums = [AnalizadorHistorico.valor_grafico(r.humedad_promedio()) for r in resumenes_anuales]
-        precips = [AnalizadorHistorico.valor_grafico(r.precipitacion_acumulada()) for r in resumenes_anuales]
-        vientos = [AnalizadorHistorico.valor_grafico(r.viento_promedio()) for r in resumenes_anuales]
+        anios = []
+        temps=[]
+        hums=[]
+        precips=[]
+        vientos=[]
+
+        for r in resumenes_anuales:
+            anios.append(r.clave)
+            temps.append(AnalizadorHistorico.valor_grafico(r.temperatura_promedio()))
+            hums.append(AnalizadorHistorico.valor_grafico(r.humedad_promedio()))
+            precips.append(AnalizadorHistorico.valor_grafico(r.precipitacion_acumulada()))
+            vientos.append(AnalizadorHistorico.valor_grafico(r.viento_promedio()))
 
         fig, axs = plt.subplots(2, 2, figsize=(10, 6))
         fig.suptitle(f"Evolución Anual del Clima - Localidad: {nombre_localidad}")

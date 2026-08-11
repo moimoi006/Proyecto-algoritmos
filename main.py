@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from datetime import datetime
 from servicios import Localidad, Municipio, ServicioClima, AnalizadorHistorico
 
 RUTA_DATOS = Path(__file__).resolve().parent / "zonas_caracas.json"
@@ -126,14 +127,19 @@ class App:
                 return
 
             print(f"\nCoincidencias encontradas ({len(coincidencias)}):")
-            for idx, (mun, loc) in enumerate(coincidencias, 1):
+            for idx in range(len(coincidencias)):
+                item = coincidencias[idx]
+                mun = item[0]
+                loc = item[1]
                 estado = "Con Coordenadas" if loc.tiene_coordenadas() else "Sin Coordenadas"
-                print(f"{idx}. {loc.nombre} ({mun.nombre}) - [{estado}]")
+                print(f"{idx + 1}. {loc.nombre} ({mun.nombre}) - [{estado}]")
 
             try:
                 sel = int(input("\nSeleccione la localidad deseada: ")) - 1
                 if 0 <= sel < len(coincidencias):
-                    mun_sel, loc_sel = coincidencias[sel]
+                    item_sel = coincidencias[sel]
+                    mun_sel = item_sel[0]
+                    loc_sel = item_sel[1]
                     if not loc_sel.tiene_coordenadas():
                         print(f"\nError: '{loc_sel.nombre}' no tiene coordenadas para consulta en tiempo real.")
                         return
@@ -153,17 +159,27 @@ class App:
         print("="*50)
 
 
-        consultas_validas = [c for c in self.consultas_sesion if c.temperatura is not None]
+        consultas_validas = []
+        for c in self.consultas_sesion:
+            if c.temperatura is not None:
+                consultas_validas.append(c)
 
         if consultas_validas:
-            mas_calida = max(consultas_validas, key=lambda c: c.temperatura)
-            mas_fria = min(consultas_validas, key=lambda c: c.temperatura)
+            mas_calida = consultas_validas[0]
+            mas_fria = consultas_validas[0]
+            suma_temperaturas = 0.0
+            for consulta in consultas_validas:
+                suma_temperaturas += consulta.temperatura
+                if consulta.temperatura > mas_calida.temperatura:
+                    mas_calida = consulta
+                if consulta.temperatura < mas_fria.temperatura:
+                    mas_fria = consulta
             print("\n3.a. RANKING DE TEMPERATURA EN LA SESIÓN:")
             print(f" -> MÁS CÁLIDA: {mas_calida.localidad.nombre} ({mas_calida.municipio_nombre}) con {mas_calida.temperatura} °C")
             print(f" -> MÁS FRÍA:   {mas_fria.localidad.nombre} ({mas_fria.municipio_nombre}) con {mas_fria.temperatura} °C")
 
 
-            prom = sum(c.temperatura for c in consultas_validas) / len(consultas_validas)
+            prom = suma_temperaturas / len(consultas_validas)
             print(f"\n3.c. PROMEDIO GENERAL DE LA SESIÓN: {prom:.2f} °C ({len(consultas_validas)} localidades consultadas)")
         else:
             print("\n3.a y 3.c: No se han realizado consultas de clima en esta sesión aún.")
@@ -192,16 +208,30 @@ class App:
             return
 
         print("Localidades disponibles para consulta histórica:")
-        for idx, (mun, loc) in enumerate(locs_validas, 1):
-            print(f"{idx}. {loc.nombre} ({mun.nombre})")
+        for idx in range(len(locs_validas)):
+            item = locs_validas[idx]
+            mun = item[0]
+            loc = item[1]
+            print(f"{idx + 1}. {loc.nombre} ({mun.nombre})")
 
         try:
             sel = int(input("\nSeleccione el número de la localidad: ")) - 1
             if 0 <= sel < len(locs_validas):
-                mun_sel, loc_sel = locs_validas[sel]
+                item_sel = locs_validas[sel]
+                mun_sel = item_sel[0]
+                loc_sel = item_sel[1]
                 fecha_inicio = input("Ingrese fecha de inicio (AAAA-MM-DD, ej: 2022-01-01): ").strip()
                 fecha_fin = input("Ingrese fecha de fin (AAAA-MM-DD, ej: 2023-12-31): ").strip()
-
+                try:
+                    f_inicio = datetime.strptime(fecha_inicio, "%Y-%m-%d")
+                    f_fin = datetime.strptime(fecha_fin, "%Y-%m-%d")
+                    
+                    if f_inicio > f_fin:
+                        print("\nError: La fecha de inicio no puede ser posterior a la fecha de fin.")
+                        return
+                except ValueError:
+                    print("\nError: El formato de fecha debe ser estrictamente AAAA-MM-DD.")
+                    return
                 print(f"\nConsultando datos históricos para '{loc_sel.nombre}'...")
                 datos = self.servicio_clima.obtener_historico(loc_sel, fecha_inicio, fecha_fin)
                 if datos:
