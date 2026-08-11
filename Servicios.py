@@ -1,8 +1,12 @@
-import requests 
+import requests
 import matplotlib.pyplot as plt
-from collections import defaultdict
 from datetime import datetime
-2
+
+def formatear_valor(valor, sufijo: str = "") -> str:
+    if valor is None:
+        return "N/A"
+    return f"{valor:.2f}{sufijo}"
+
 class Localidad:
     def __init__(self, nombre: str, latitud: float = None, longitud: float = None):
         self.nombre=nombre
@@ -68,7 +72,7 @@ class ClimaActual:
         95: "Tormenta eléctrica", 96: "Tormenta eléctrica con granizo ligero", 99: "Tormenta eléctrica con granizo fuerte"
         }
 
-def __init__(self, municipio_nombre: str, localidad: Localidad, temperatura: float, humedad: float, viento: float, codigo_clima: int):
+    def __init__(self, municipio_nombre: str, localidad: Localidad, temperatura: float, humedad: float, viento: float, codigo_clima: int):
         self.municipio_nombre = municipio_nombre
         self.localidad = localidad
         self.temperatura = temperatura
@@ -76,11 +80,10 @@ def __init__(self, municipio_nombre: str, localidad: Localidad, temperatura: flo
         self.viento = viento
         self.codigo_clima = codigo_clima
 
-def obtener_descripcion_clima(self) -> str:
+    def obtener_descripcion_clima(self) -> str:
         return self.CODIGOS_WMO.get(self.codigo_clima, f"Código {self.codigo_clima}")
 
-    
-def show(self):
+    def show(self):
         print("\n" + "="*50)
         print(" DETALLES METEOROLÓGICOS EN TIEMPO REAL")
         print("="*50)
@@ -93,9 +96,15 @@ def show(self):
         print("="*50)
 
 class ServicioClima:
-    def __init__(self):
+    def __init__(self, tiempo_espera: int = 15):
         self.url_base="https://api.open-meteo.com/v1/forecast"
         self.url_archive = "https://archive-api.open-meteo.com/v1/archive"
+        self.tiempo_espera = tiempo_espera
+    def motivo_error(self, respuesta) -> str:
+        try:
+            return respuesta.json().get("reason", respuesta.text)
+        except ValueError:
+            return respuesta.text
     def obtener_clima(self, municipio_nombre: str, localidad: Localidad) -> ClimaActual:
         if not localidad.tiene_coordenadas():
             print(f"\tError: La localidad '{localidad.nombre}' no posee coordenadas.")
@@ -109,24 +118,33 @@ class ServicioClima:
         }
 
         try:
-            respuesta = requests.get(self.url_base, params=parametros)
-            if respuesta.status_code == 200:
-                datos = respuesta.json()
-                actual = datos.get("current", {})
-                return ClimaActual(
-                    municipio_nombre=municipio_nombre,
-                    localidad=localidad,
-                    temperatura=actual.get("temperature_2m"),
-                    humedad=actual.get("relative_humidity_2m"),
-                    viento=actual.get("wind_speed_10m"),
-                    codigo_clima=actual.get("weather_code")
-                )
-            else:
-                print(f"\tError al conectar con el servicio de clima (Status {respuesta.status_code}).")
-                return None
-        except Exception as e:
+            respuesta = requests.get(self.url_base, params=parametros, timeout=self.tiempo_espera)
+        except requests.exceptions.Timeout:
+            print(f"\tEl servicio de clima no respondió en {self.tiempo_espera} segundos.")
+            return None
+        except requests.exceptions.RequestException as e:
             print(f"\tOcurrió un fallo en la red: {e}")
             return None
+
+        if respuesta.status_code != 200:
+            print(f"\tError al conectar con el servicio de clima (Status {respuesta.status_code}): {self.motivo_error(respuesta)}")
+            return None
+
+        try:
+            datos = respuesta.json()
+        except ValueError:
+            print("\tEl servicio de clima devolvió una respuesta que no es JSON válido.")
+            return None
+
+        actual = datos.get("current", {})
+        return ClimaActual(
+            municipio_nombre=municipio_nombre,
+            localidad=localidad,
+            temperatura=actual.get("temperature_2m"),
+            humedad=actual.get("relative_humidity_2m"),
+            viento=actual.get("wind_speed_10m"),
+            codigo_clima=actual.get("weather_code")
+        )
 
     
     def obtener_historico(self, localidad: Localidad, fecha_inicio: str, fecha_fin: str) -> dict:
@@ -144,102 +162,169 @@ class ServicioClima:
         }
 
         try:
-            respuesta = requests.get(self.url_archive, params=parametros)
-            if respuesta.status_code == 200:
-                return respuesta.json()
-            else:
-                print(f"\tError al conectar con el servicio histórico (Status {respuesta.status_code}).")
-                return None
-        except Exception as e:
+            respuesta = requests.get(self.url_archive, params=parametros, timeout=self.tiempo_espera)
+        except requests.exceptions.Timeout:
+            print(f"\tEl servicio histórico no respondió en {self.tiempo_espera} segundos.")
+            return None
+        except requests.exceptions.RequestException as e:
             print(f"\tOcurrió un fallo en la red: {e}")
             return None
 
-class AnalizadorHistorico:
-    @staticmethod
-    def procesar_y_mostrar(localidad: Localidad, datos_historicos: dict):
+        if respuesta.status_code != 200:
+            print(f"\tError al conectar con el servicio histórico (Status {respuesta.status_code}): {self.motivo_error(respuesta)}")
+            return None
+
+        try:
+            return respuesta.json()
+        except ValueError:
+            print("\tEl servicio histórico devolvió una respuesta que no es JSON válido.")
+            return None
+
+class RegistroDiario:
+    def __init__(self, fecha: str, temperatura: float = None, humedad: float = None, precipitacion: float = None, viento: float = None):
+        self.fecha = datetime.strptime(fecha, "%Y-%m-%d")
+        self.temperatura = temperatura
+        self.humedad = humedad
+        self.precipitacion = precipitacion
+        self.viento = viento
+    def clave_mes(self) -> str:
+        return self.fecha.strftime("%Y-%m")
+    def clave_anio(self) -> str:
+        return self.fecha.strftime("%Y")
+
+class ResumenPeriodo:
+    def __init__(self, clave: str):
+        self.clave = clave
+        self.registros = []
+    def agregar_registro(self, registro: RegistroDiario):
+        self.registros.append(registro)
+    def valores(self, magnitud: str) -> list:
+        return [getattr(r, magnitud) for r in self.registros if getattr(r, magnitud) is not None]
+    def promedio(self, magnitud: str):
+        valores = self.valores(magnitud)
+        if not valores:
+            return None
+        return sum(valores) / len(valores)
+    def temperatura_promedio(self):
+        return self.promedio("temperatura")
+    def humedad_promedio(self):
+        return self.promedio("humedad")
+    def viento_promedio(self):
+        return self.promedio("viento")
+    def precipitacion_acumulada(self):
+        valores = self.valores("precipitacion")
+        if not valores:
+            return None
+        return sum(valores)
+    def show(self):
+        print(
+            f" - {self.clave} -> "
+            f"Temp: {formatear_valor(self.temperatura_promedio(), '°C')} | "
+            f"Humedad: {formatear_valor(self.humedad_promedio(), '%')} | "
+            f"Precip. Acum: {formatear_valor(self.precipitacion_acumulada(), 'mm')} | "
+            f"Viento: {formatear_valor(self.viento_promedio(), 'km/h')}"
+        )
+
+class HistorialLocalidad:
+    def __init__(self, localidad: Localidad):
+        self.localidad = localidad
+        self.registros = []
+    def valor_en(self, lista: list, indice: int):
+        if indice < len(lista):
+            return lista[indice]
+        return None
+    def cargar_desde_api(self, datos_historicos: dict) -> bool:
         daily = datos_historicos.get("daily", {})
         fechas = daily.get("time", [])
+        if not fechas:
+            return False
         temperaturas = daily.get("temperature_2m_mean", [])
         humedades = daily.get("relative_humidity_2m_mean", [])
         precipitaciones = daily.get("precipitation_sum", [])
         vientos = daily.get("wind_speed_10m_max", [])
+        for i in range(len(fechas)):
+            self.registros.append(
+                RegistroDiario(
+                    fecha=fechas[i],
+                    temperatura=self.valor_en(temperaturas, i),
+                    humedad=self.valor_en(humedades, i),
+                    precipitacion=self.valor_en(precipitaciones, i),
+                    viento=self.valor_en(vientos, i)
+                )
+            )
+        return True
+    def agrupar(self, por_anio: bool) -> list:
+        resumenes = {}
+        for registro in self.registros:
+            clave = registro.clave_anio() if por_anio else registro.clave_mes()
+            if clave not in resumenes:
+                resumenes[clave] = ResumenPeriodo(clave)
+            resumenes[clave].agregar_registro(registro)
+        return [resumenes[clave] for clave in sorted(resumenes)]
+    def resumenes_mensuales(self) -> list:
+        return self.agrupar(False)
+    def resumenes_anuales(self) -> list:
+        return self.agrupar(True)
+    def resumen_total(self) -> ResumenPeriodo:
+        total = ResumenPeriodo("Período completo")
+        for registro in self.registros:
+            total.agregar_registro(registro)
+        return total
 
-        if not fechas:
+class AnalizadorHistorico:
+    @staticmethod
+    def procesar_y_mostrar(localidad: Localidad, datos_historicos: dict):
+        historial = HistorialLocalidad(localidad)
+        if not historial.cargar_desde_api(datos_historicos):
             print("\nNo se encontraron datos en ese rango de fechas.")
             return
 
-        datos_mes = defaultdict(lambda: {"temp": [], "hum": [], "precip": [], "viento": []})
-        datos_anio = defaultdict(lambda: {"temp": [], "hum": [], "precip": [], "viento": []})
-
-        for i in range(len(fechas)):
-            dt = datetime.strptime(fechas[i], "%Y-%m-%d")
-            clave_mes = dt.strftime("%Y-%m")
-            clave_anio = dt.strftime("%Y")
-            
-            t = temperaturas[i] if temperaturas[i] is not None else 0
-            h = humedades[i] if humedades[i] is not None else 0
-            p = precipitaciones[i] if precipitaciones[i] is not None else 0
-            v = vientos[i] if vientos[i] is not None else 0
-
-            datos_mes[clave_mes]["temp"].append(t)
-            datos_mes[clave_mes]["hum"].append(h)
-            datos_mes[clave_mes]["precip"].append(p)
-            datos_mes[clave_mes]["viento"].append(v)
-
-            datos_anio[clave_anio]["temp"].append(t)
-            datos_anio[clave_anio]["hum"].append(h)
-            datos_anio[clave_anio]["precip"].append(p)
-            datos_anio[clave_anio]["viento"].append(v)
-
         print(f"\n================ ANÁLISIS HISTÓRICO: {localidad.nombre.upper()} ================")
         print("\n4.a. PROMEDIOS MENSUALES:")
-        for mes, vals in sorted(datos_mes.items()):
-            t_p = sum(vals["temp"]) / len(vals["temp"]) if vals["temp"] else 0
-            h_p = sum(vals["hum"]) / len(vals["hum"]) if vals["hum"] else 0
-            p_a = sum(vals["precip"])
-            v_p = sum(vals["viento"]) / len(vals["viento"]) if vals["viento"] else 0
-            print(f" - {mes} -> Temp: {t_p:.2f}°C | Humedad: {h_p:.2f}% | Precip. Acum: {p_a:.2f}mm | Viento: {v_p:.2f}km/h")
+        for resumen in historial.resumenes_mensuales():
+            resumen.show()
 
-        all_t = [t for t in temperaturas if t is not None]
-        all_h = [h for h in humedades if h is not None]
-        all_p = [p for p in precipitaciones if p is not None]
-        all_v = [v for v in vientos if v is not None]
-
+        total = historial.resumen_total()
         print("\n4.b. PROMEDIOS GENERALES EN EL PERÍODO:")
-        print(f" - Temperatura Promedio: {sum(all_t)/len(all_t):.2f} °C" if all_t else " - Temp: N/A")
-        print(f" - Humedad Relativa Promedio: {sum(all_h)/len(all_h):.2f} %" if all_h else " - Humedad: N/A")
-        print(f" - Precipitación Total Acumulada: {sum(all_p):.2f} mm" if all_p else " - Precipitación: N/A")
-        print(f" - Viento Promedio: {sum(all_v)/len(all_v):.2f} km/h" if all_v else " - Viento: N/A")
+        print(f" - Temperatura Promedio: {formatear_valor(total.temperatura_promedio(), ' °C')}")
+        print(f" - Humedad Relativa Promedio: {formatear_valor(total.humedad_promedio(), ' %')}")
+        print(f" - Precipitación Total Acumulada: {formatear_valor(total.precipitacion_acumulada(), ' mm')}")
+        print(f" - Viento Promedio: {formatear_valor(total.viento_promedio(), ' km/h')}")
 
-        resumen_anios = {}
-        for anio, vals in datos_anio.items():
-            resumen_anios[anio] = {
-                "temp_prom": sum(vals["temp"]) / len(vals["temp"]) if vals["temp"] else 0,
-                "hum_prom": sum(vals["hum"]) / len(vals["hum"]) if vals["hum"] else 0,
-                "precip_acum": sum(vals["precip"]),
-                "viento_prom": sum(vals["viento"]) / len(vals["viento"]) if vals["viento"] else 0
-            }
-
-        c_caluroso = max(resumen_anios.items(), key=lambda x: x[1]["temp_prom"])[0]
-        c_fresco = min(resumen_anios.items(), key=lambda x: x[1]["temp_prom"])[0]
-        c_precip = max(resumen_anios.items(), key=lambda x: x[1]["precip_acum"])[0]
-        c_humedo = max(resumen_anios.items(), key=lambda x: x[1]["hum_prom"])[0]
-
+        anuales = historial.resumenes_anuales()
         print("\n4.c. REGISTROS POR AÑO:")
-        print(f" - Año más caluroso: {c_caluroso} ({resumen_anios[c_caluroso]['temp_prom']:.2f} °C)")
-        print(f" - Año más fresco: {c_fresco} ({resumen_anios[c_fresco]['temp_prom']:.2f} °C)")
-        print(f" - Año con mayor precipitación: {c_precip} ({resumen_anios[c_precip]['precip_acum']:.2f} mm)")
-        print(f" - Año con mayor humedad: {c_humedo} ({resumen_anios[c_humedo]['hum_prom']:.2f} %)")
+        AnalizadorHistorico.mostrar_extremo(anuales, "temperatura_promedio", "Año más caluroso", " °C", True)
+        AnalizadorHistorico.mostrar_extremo(anuales, "temperatura_promedio", "Año más fresco", " °C", False)
+        AnalizadorHistorico.mostrar_extremo(anuales, "precipitacion_acumulada", "Año con mayor precipitación", " mm", True)
+        AnalizadorHistorico.mostrar_extremo(anuales, "humedad_promedio", "Año con mayor humedad", " %", True)
 
-        AnalizadorHistorico.generar_grafico(resumen_anios, localidad.nombre)
+        AnalizadorHistorico.generar_grafico(anuales, localidad.nombre)
 
     @staticmethod
-    def generar_grafico(resumen_anios: dict, nombre_localidad: str):
-        anios = sorted(resumen_anios.keys())
-        temps = [resumen_anios[a]["temp_prom"] for a in anios]
-        hums = [resumen_anios[a]["hum_prom"] for a in anios]
-        precips = [resumen_anios[a]["precip_acum"] for a in anios]
-        vientos = [resumen_anios[a]["viento_prom"] for a in anios]
+    def mostrar_extremo(resumenes: list, magnitud: str, etiqueta: str, sufijo: str, buscar_maximo: bool):
+        validos = [r for r in resumenes if getattr(r, magnitud)() is not None]
+        if not validos:
+            print(f" - {etiqueta}: N/A")
+            return
+        if buscar_maximo:
+            elegido = max(validos, key=lambda r: getattr(r, magnitud)())
+        else:
+            elegido = min(validos, key=lambda r: getattr(r, magnitud)())
+        print(f" - {etiqueta}: {elegido.clave} ({formatear_valor(getattr(elegido, magnitud)(), sufijo)})")
+
+    @staticmethod
+    def valor_grafico(valor):
+        if valor is None:
+            return float("nan")
+        return valor
+
+    @staticmethod
+    def generar_grafico(resumenes_anuales: list, nombre_localidad: str):
+        anios = [r.clave for r in resumenes_anuales]
+        temps = [AnalizadorHistorico.valor_grafico(r.temperatura_promedio()) for r in resumenes_anuales]
+        hums = [AnalizadorHistorico.valor_grafico(r.humedad_promedio()) for r in resumenes_anuales]
+        precips = [AnalizadorHistorico.valor_grafico(r.precipitacion_acumulada()) for r in resumenes_anuales]
+        vientos = [AnalizadorHistorico.valor_grafico(r.viento_promedio()) for r in resumenes_anuales]
 
         fig, axs = plt.subplots(2, 2, figsize=(10, 6))
         fig.suptitle(f"Evolución Anual del Clima - Localidad: {nombre_localidad}")
