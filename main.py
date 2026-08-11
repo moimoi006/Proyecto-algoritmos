@@ -1,14 +1,24 @@
 import json
+from pathlib import Path
 from servicios import Localidad, Municipio, ServicioClima, AnalizadorHistorico
+
+RUTA_DATOS = Path(__file__).resolve().parent / "zonas_caracas.json"
 
 class App:
 
     def __init__(self):
         self.municipios=[]
         self.servicio_clima= ServicioClima()
-        self.analizador_historico = AnalizadorHistorico()
         self.consultas_sesion = []
         self.cargar_datos()
+
+    def registrar_consulta(self, clima_obj):
+        for idx, consulta in enumerate(self.consultas_sesion):
+            if (consulta.municipio_nombre == clima_obj.municipio_nombre and
+                    consulta.localidad.nombre == clima_obj.localidad.nombre):
+                self.consultas_sesion[idx] = clima_obj
+                return
+        self.consultas_sesion.append(clima_obj)
 
     def buscar_municipio(self, nombre_municipio: str) -> Municipio:
         for mun in self.municipios:
@@ -18,31 +28,44 @@ class App:
     
     def cargar_datos(self):
         try:
-            with open("zonas_caracas.json", "r", encoding="utf-8") as archivo:
+            with open(RUTA_DATOS, "r", encoding="utf-8") as archivo:
                 datos = json.load(archivo)
-            for nombre_mun, localidades in datos.items():
-                municipio_obj = self.buscar_municipio(nombre_mun)
-                if municipio_obj is None:
-                    municipio_obj = Municipio(nombre=nombre_mun)
-                    self.municipios.append(municipio_obj)
-                for item in localidades:
-                    lat = item.get("latitud", None)
-                    lng = item.get("longitud", None)
-
-                    localidad_obj = Localidad(
-                        nombre=item["localidad"],
-                        latitud=lat,
-                        longitud=lng
-                )
-                    municipio_obj.agregar_localidad(localidad_obj)
-            print("Datos cargados con exito en la aplicacion!")
-            self.mostrar_reporte_general()
-
         except FileNotFoundError:
-            print("\nError: No se encontro el archivo 'zonas_caracas.json'.")
-        except Exception as e:
-            print(f"\nOcurrio un error al cargar los datos: {e}")
-        
+            print(f"\nError: No se encontro el archivo '{RUTA_DATOS}'.")
+            return
+        except json.JSONDecodeError as e:
+            print(f"\nError: El archivo '{RUTA_DATOS}' no contiene un JSON valido: {e}")
+            return
+        except OSError as e:
+            print(f"\nError: No se pudo leer el archivo '{RUTA_DATOS}': {e}")
+            return
+
+        if not isinstance(datos, dict):
+            print(f"\nError: Se esperaba un objeto de municipios en '{RUTA_DATOS}'.")
+            return
+
+        for nombre_mun, localidades in datos.items():
+            municipio_obj = self.buscar_municipio(nombre_mun)
+            if municipio_obj is None:
+                municipio_obj = Municipio(nombre=nombre_mun)
+                self.municipios.append(municipio_obj)
+            for item in localidades:
+                nombre_loc = item.get("localidad", None)
+                if nombre_loc is None:
+                    print(f"Aviso: se omitio un registro sin nombre de localidad en '{nombre_mun}'.")
+                    continue
+
+                localidad_obj = Localidad(
+                    nombre=nombre_loc,
+                    latitud=item.get("latitud", None),
+                    longitud=item.get("longitud", None)
+                )
+                municipio_obj.agregar_localidad(localidad_obj)
+
+        print("Datos cargados con exito en la aplicacion!")
+        self.mostrar_reporte_general()
+
+
     def mostrar_reporte_general(self):
         print("\n" + "=" * 50)
         print(" Reporte de Municipios y Localidades (Caracas)")
@@ -82,8 +105,7 @@ class App:
                         clima_obj = self.servicio_clima.obtener_clima(mun_sel.nombre, loc_sel)
                         if clima_obj:
                             clima_obj.show()
-
-                            self.consultas_sesion.append(clima_obj)
+                            self.registrar_consulta(clima_obj)
                     else:
                         print("\nSelección de localidad inválida.")
                 else:
@@ -118,7 +140,7 @@ class App:
                     clima_obj = self.servicio_clima.obtener_clima(mun_sel.nombre, loc_sel)
                     if clima_obj:
                         clima_obj.show()
-                        self.consultas_sesion.append(clima_obj)
+                        self.registrar_consulta(clima_obj)
                 else:
                     print("\nSelección inválida.")
             except ValueError:
@@ -131,16 +153,18 @@ class App:
         print("="*50)
 
 
-        if self.consultas_sesion:
-            mas_calida = max(self.consultas_sesion, key=lambda c: c.temperatura)
-            mas_fria = min(self.consultas_sesion, key=lambda c: c.temperatura)
+        consultas_validas = [c for c in self.consultas_sesion if c.temperatura is not None]
+
+        if consultas_validas:
+            mas_calida = max(consultas_validas, key=lambda c: c.temperatura)
+            mas_fria = min(consultas_validas, key=lambda c: c.temperatura)
             print("\n3.a. RANKING DE TEMPERATURA EN LA SESIÓN:")
             print(f" -> MÁS CÁLIDA: {mas_calida.localidad.nombre} ({mas_calida.municipio_nombre}) con {mas_calida.temperatura} °C")
             print(f" -> MÁS FRÍA:   {mas_fria.localidad.nombre} ({mas_fria.municipio_nombre}) con {mas_fria.temperatura} °C")
 
 
-            prom = sum(c.temperatura for c in self.consultas_sesion) / len(self.consultas_sesion)
-            print(f"\n3.c. PROMEDIO GENERAL DE LA SESIÓN: {prom:.2f} °C ({len(self.consultas_sesion)} consultas)")
+            prom = sum(c.temperatura for c in consultas_validas) / len(consultas_validas)
+            print(f"\n3.c. PROMEDIO GENERAL DE LA SESIÓN: {prom:.2f} °C ({len(consultas_validas)} localidades consultadas)")
         else:
             print("\n3.a y 3.c: No se han realizado consultas de clima en esta sesión aún.")
 
